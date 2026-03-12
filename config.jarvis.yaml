@@ -1,0 +1,122 @@
+## Stream Monitor — Config para jarvis (Linux/WSL)
+## Copiar a config.yaml en el directorio de jarvis
+
+sensors:
+  system:
+    interval: 30s
+    metrics: [cpu, ram, disk, processes, services]
+    top_processes: 5
+    disk_paths:
+      /: /
+      /home: /home
+    watched_services:
+      - xavier-api
+      - xavier-email-bot
+      - nginx
+
+  filesystem:
+    interval: 10s
+    paths:
+      - "/home/usuario535/services"
+      - "/home/usuario535/web"
+    ignore_patterns: [".tmp", ".swp", "__pycache__", ".pyc", "node_modules"]
+    max_events: 500
+
+  web:
+    interval: 60s
+    pinchtab_url: "http://localhost:9867"
+    watch_urls: []
+
+thresholds:
+  cpu.percent: 5.0
+  ram.percent: 2.0
+  disk.*.percent: 1.0
+  disk.*.free_gb: 1.0
+
+rules:
+  # --- RAM ---
+  - name: high_ram
+    condition: "ram.percent > 85"
+    action: [alert, top_processes, record, email]
+    enrich_processes: true
+    category: diagnosis
+    message: "RAM al {ram.percent}% ({ram.free_gb} GB libres)"
+    cooldown: 10m
+
+  - name: critical_ram
+    condition: "ram.percent > 95"
+    action: [alert, top_processes, record, email]
+    enrich_processes: true
+    category: diagnosis
+    message: "RAM CRITICA {ram.percent}%"
+    cooldown: 5m
+
+  # --- CPU ---
+  - name: high_cpu
+    condition: "cpu.percent > 90"
+    action: [alert, email]
+    message: "CPU al {cpu.percent}%"
+    cooldown: 5m
+
+  # --- Disk ---
+  - name: disk_root_low
+    condition: "disk./.free_gb < 10"
+    action: [alert, suggest_cleanup, record, email]
+    category: disk_management
+    message: "Disco / solo {disk./.free_gb} GB libres"
+    cooldown: 1h
+
+  - name: disk_home_low
+    condition: "disk./home.free_gb < 20"
+    action: [alert, record, email]
+    category: disk_management
+    message: "Disco /home solo {disk./home.free_gb} GB libres"
+    cooldown: 1h
+
+  # --- Services (auto-restart) ---
+  - name: xavier_api_down
+    condition: "services.xavier-api.status != 'active'"
+    action: [alert, restart, record, email]
+    service: xavier-api
+    category: service_management
+    message: "Xavier API caida — auto-restart"
+    cooldown: 5m
+
+  - name: email_bot_down
+    condition: "services.xavier-email-bot.status != 'active'"
+    action: [alert, restart, record, email]
+    service: xavier-email-bot
+    category: service_management
+    message: "Email Bot caido — auto-restart"
+    cooldown: 5m
+
+  - name: nginx_down
+    condition: "services.nginx.status != 'active'"
+    action: [alert, restart, record, email]
+    service: nginx
+    category: service_management
+    message: "Nginx caido — auto-restart"
+    cooldown: 5m
+
+  # --- Filesystem ---
+  - name: fs_activity
+    condition: "events_count > 20"
+    action: alert
+    message: "{events_count} cambios en filesystem"
+    cooldown: 10m
+
+  - name: fs_many_deletes
+    condition: "deleted > 10"
+    action: [alert, email]
+    message: "Borrado masivo: {deleted} archivos eliminados"
+    cooldown: 5m
+
+# Email config (jarvis uses xavier-email-bot API)
+email:
+  api_url: "http://localhost:5002/api/email/send"
+  to: "xavier.ingelect@gmx.es"
+
+logging:
+  level: INFO
+  file: stream-monitor.log
+  max_mb: 10

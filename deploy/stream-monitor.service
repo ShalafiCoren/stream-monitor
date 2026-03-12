@@ -1,0 +1,17 @@
+[Unit]
+Description=Stream Monitor - Real-time system monitoring
+After=network.target
+Wants=xavier-api.service
+
+[Service]
+Type=simple
+User=usuario535
+WorkingDirectory=/home/usuario535/services/stream-monitor
+ExecStart=/usr/bin/python3 monitor.py
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

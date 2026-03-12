@@ -1,0 +1,119 @@
+sensors:
+  system:
+    interval: 30s
+    metrics: [cpu, ram, disk, processes, services]
+    top_processes: 5
+    watched_services:
+      - com.docker.service
+    # Ollama runs as process, not service — tracked via processes
+    # Auto-detects disks on Windows. Override for Linux:
+    # disk_paths:
+    #   /: /
+    #   /home: /home
+
+  filesystem:
+    interval: 10s
+    paths:
+      - "C:\\Users\\Shalafi\\Downloads"
+      - "E:\\Gamessteam"
+      - "D:\\Games"
+    ignore_patterns: [".tmp", ".crdownload", "~$", ".swp", "Thumbs.db", "desktop.ini", ".partial"]
+    max_events: 500
+
+  web:
+    interval: 60s
+    pinchtab_url: "http://localhost:9867"
+    watch_urls: []  # Empty = watch all tabs. Add URLs to filter.
+
+thresholds:
+  cpu.percent: 5.0
+  ram.percent: 2.0
+  disk.*.percent: 1.0
+  disk.*.free_gb: 1.0
+
+rules:
+  # --- System: RAM ---
+  - name: high_ram
+    condition: "ram.percent > 90"
+    action: [alert, top_processes, record]
+    enrich_processes: true
+    category: diagnosis
+    message: "RAM al {ram.percent}% ({ram.free_gb} GB libres)"
+    cooldown: 10m
+
+  - name: critical_ram
+    condition: "ram.percent > 95"
+    action: [alert, top_processes, record]
+    enrich_processes: true
+    category: diagnosis
+    message: "RAM CRITICA {ram.percent}% -- solo {ram.free_gb} GB libres"
+    cooldown: 5m
+
+  # --- System: CPU ---
+  - name: high_cpu
+    condition: "cpu.percent > 90"
+    action: [alert, top_processes]
+    enrich_processes: true
+    message: "CPU al {cpu.percent}%"
+    cooldown: 5m
+
+  # --- System: Disk ---
+  - name: disk_c_low
+    condition: "disk.C:.free_gb < 50"
+    action: [alert, suggest_cleanup, record]
+    category: disk_management
+    message: "Disco C: solo {disk.C:.free_gb} GB libres ({disk.C:.percent}% usado)"
+    cooldown: 1h
+
+  - name: disk_c_critical
+    condition: "disk.C:.free_gb < 20"
+    action: [alert, suggest_cleanup, record]
+    category: disk_management
+    message: "DISCO C: CRITICO -- {disk.C:.free_gb} GB libres"
+    cooldown: 30m
+
+  - name: disk_e_low
+    condition: "disk.E:.free_gb < 100"
+    action: alert
+    message: "Disco E: (juegos) bajando: {disk.E:.free_gb} GB libres"
+    cooldown: 1h
+
+  # --- System: Services ---
+  - name: docker_down
+    condition: "services.com.docker.service.status == 'stopped'"
+    action: alert
+    message: "Docker Desktop parado"
+    cooldown: 1h
+
+  # --- Filesystem ---
+  - name: fs_activity
+    condition: "events_count > 10"
+    action: alert
+    enrich_events: true
+    message: "{events_count} cambios en filesystem ({created} nuevos, {modified} modificados, {deleted} borrados)"
+    cooldown: 5m
+
+  - name: fs_large_file
+    condition: "largest_new_size_mb > 500"
+    action: [alert, record]
+    category: disk_management
+    message: "Archivo grande creado: {largest_new_file} ({largest_new_size_mb} MB)"
+    cooldown: 1m
+
+  - name: fs_many_deletes
+    condition: "deleted > 20"
+    action: alert
+    message: "Borrado masivo detectado: {deleted} archivos eliminados"
+    cooldown: 5m
+
+  # --- Web (Pinchtab) ---
+  - name: web_offline
+    condition: "status == 'offline'"
+    action: alert
+    message: "Pinchtab no disponible"
+    cooldown: 30m
+
+logging:
+  level: INFO
+  file: stream-monitor.log
+  max_mb: 10
